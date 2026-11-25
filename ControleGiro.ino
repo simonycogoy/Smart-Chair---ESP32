@@ -6,9 +6,18 @@
   SDA -> GPIO 25
   SCL -> GPIO 26
   Endereco I2C: 0x68
+
+  Comunicacao:
+  ESP32 -> Bluetooth Classico -> Raspberry Pi
+  Nome Bluetooth: SmartChair-ESP32
 */
 
 #include "mpu6050.h"
+#include <BluetoothSerial.h>
+
+// Objeto de comunicacao Bluetooth
+BluetoothSerial SerialBT;
+
 
 // ====================================================
 // LIMITES DOS MOVIMENTOS
@@ -57,6 +66,34 @@ unsigned long inicioParada = 0;
 
 
 // ====================================================
+// COMUNICACAO BLUETOOTH
+// ====================================================
+
+// Guarda o ultimo comando enviado para evitar repeticoes
+String ultimoComandoEnviado = "";
+
+void enviarComando(String comando) {
+
+  // Evita enviar repetidamente o mesmo comando
+  if (comando == ultimoComandoEnviado) {
+    return;
+  }
+
+  // Mostra o comando no Monitor Serial
+  Serial.println(comando);
+
+  // Envia o comando para o Raspberry Pi
+  if (SerialBT.hasClient()) {
+    SerialBT.println(comando);
+  }
+
+  // Atualiza o ultimo comando enviado
+  ultimoComandoEnviado = comando;
+
+}
+
+
+// ====================================================
 // SETUP
 // ====================================================
 
@@ -66,15 +103,34 @@ void setup() {
 
   delay(1000);
 
+
+  // ==================================================
+  // INICIALIZACAO DO BLUETOOTH
+  // ==================================================
+
+  if (SerialBT.begin("SmartChair-ESP32")) {
+
+    Serial.println("Bluetooth iniciado!");
+    Serial.println("Nome: SmartChair-ESP32");
+
+  } else {
+
+    Serial.println("Erro ao iniciar Bluetooth!");
+
+  }
+
+
   Serial.println();
   Serial.println("====================================");
   Serial.println("       SMART CHAIR - MPU6050");
   Serial.println("====================================");
 
+
   // Inicializa o sensor
   mpu_begin();
 
   Serial.println("MPU6050 inicializado.");
+
 
   // Calibracao inicial
   Serial.println();
@@ -85,8 +141,10 @@ void setup() {
 
   mpu_calibrate(200);
 
+
   // Zera os angulos
   mpu_reset();
+
 
   Serial.println();
   Serial.println("SENSOR CALIBRADO!");
@@ -126,6 +184,7 @@ void loop() {
 
       diferencaAngulo = 0;
 
+
       // GIRO PARA ESQUERDA
       if (yaw > LIMITE_ESQUERDA) {
 
@@ -133,12 +192,12 @@ void loop() {
 
         estado = GIRANDO_ESQUERDA;
 
-        Serial.println();
-        Serial.println("COMANDO,ESQUERDA,90");
+        enviarComando("COMANDO,ESQUERDA,90");
 
         Serial.println("Iniciando giro para esquerda.");
 
       }
+
 
       // GIRO PARA DIREITA
       else if (yaw < LIMITE_DIREITA) {
@@ -147,31 +206,33 @@ void loop() {
 
         estado = GIRANDO_DIREITA;
 
-        Serial.println();
-        Serial.println("COMANDO,DIREITA,90");
+        enviarComando("COMANDO,DIREITA,90");
 
         Serial.println("Iniciando giro para direita.");
 
       }
 
+
       // MOVIMENTO PARA FRENTE
       else if (roll < LIMITE_FRENTE) {
 
-        Serial.println("MOVIMENTO,FRENTE");
+        enviarComando("MOVIMENTO,FRENTE");
 
       }
+
 
       // MOVIMENTO PARA TRAS
       else if (roll > LIMITE_TRAS) {
 
-        Serial.println("MOVIMENTO,TRAS");
+        enviarComando("MOVIMENTO,TRAS");
 
       }
+
 
       // PARADO
       else {
 
-        Serial.println("MOVIMENTO,PARADO");
+        enviarComando("MOVIMENTO,PARADO");
 
       }
 
@@ -193,12 +254,14 @@ void loop() {
 
       Serial.println(diferencaAngulo, 2);
 
-      // Verifica se atingiu 90 graus
-      if (diferencaAngulo >= ANGULO_ALVO || diferencaAngulo <= ANGULO_ALVOMenos ) {
 
-        Serial.println("COMANDO,PARAR");
+      // Verifica se atingiu o limite positivo ou negativo
+      if (diferencaAngulo >= ANGULO_ALVO ||
+          diferencaAngulo <= ANGULO_ALVOMenos) {
 
-        Serial.println("Giro de 90 graus concluido.");
+        enviarComando("COMANDO,PARAR");
+
+        Serial.println("Giro concluido.");
 
         inicioParada = millis();
 
@@ -224,12 +287,13 @@ void loop() {
 
       Serial.println(diferencaAngulo, 2);
 
-      // Verifica se atingiu 90 graus
+
+      // Verifica se atingiu o angulo desejado
       if (diferencaAngulo >= ANGULO_ALVO) {
 
-        Serial.println("COMANDO,PARAR");
+        enviarComando("COMANDO,PARAR");
 
-        Serial.println("Giro de 90 graus concluido.");
+        Serial.println("Giro concluido.");
 
         inicioParada = millis();
 
@@ -264,6 +328,9 @@ void loop() {
         Serial.println("Recalibracao concluida!");
 
         Serial.println("Novo comando liberado.");
+
+        // Libera o envio de um novo comando
+        ultimoComandoEnviado = "";
 
         estado = AGUARDANDO;
 
